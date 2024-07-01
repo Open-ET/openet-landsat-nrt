@@ -104,9 +104,10 @@ def landsat8(landsat_toa):
     }
 
     # Scale (unscale?) the reflectance and LST to match a LANDSAT/LC08/C02/T1_L2 image
+    # Setting output type to match T1_L2 image types
     output_img = (
-        landsat_rt_sr.subtract(-0.2).divide(0.0000275)
-        .addBands([landsat_lst.subtract(149.0).divide(0.00341802)])
+        landsat_rt_sr.subtract(-0.2).divide(0.0000275).round().clamp(0, 65535).uint16()
+        .addBands([landsat_lst.subtract(149.0).divide(0.00341802).round().clamp(0, 65535).uint16()])
         .addBands(landsat_toa.select(['QA_PIXEL', 'QA_RADSAT']))
         .set(properties)
     )
