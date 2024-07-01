@@ -88,8 +88,11 @@ def landsat8(landsat_toa):
         'IMAGE_QUALITY_TIRS': landsat_toa.get('IMAGE_QUALITY_TIRS'),
         'LANDSAT_PRODUCT_ID': landsat_toa.get('LANDSAT_PRODUCT_ID'),
         'LANDSAT_SCENE_ID': landsat_toa.get('LANDSAT_SCENE_ID'),
-        # # This one changes between TOA and L2
-        # 'PROCESSING_LEVEL': landsat_rt.get('PROCESSING_LEVEL'),
+        # Use the TOA image PROCESSING_LEVEL for both properties for now
+        # Should the L2 processing level be hardcoded to "L2SP" or something else?
+        'L1_PROCESSING_LEVEL': landsat_toa.get('PROCESSING_LEVEL'),
+        'PROCESSING_LEVEL': landsat_toa.get('PROCESSING_LEVEL'),
+        # 'PROCESSING_LEVEL': 'L2SP',
         'SENSOR_ID': landsat_toa.get('SENSOR_ID'),
         'SPACECRAFT_ID': landsat_toa.get('SPACECRAFT_ID'),
         'SUN_AZIMUTH': landsat_toa.get('SUN_AZIMUTH'),
