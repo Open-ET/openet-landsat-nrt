@@ -1,4 +1,5 @@
 import math
+import pprint
 
 import ee
 
@@ -22,14 +23,11 @@ def surface_reflectance(refl_toa_image, meteo_coll):
     doy = ee.Number(scene_date.getRelative('day', 'year')).add(1).double()
     hour = ee.Number(scene_date.getFraction('day')).multiply(24)
 
-    # TODO: This should be a function parameter or a global dataset
-    #   to support global applications
-    # CGM - The NED asset is deprecated, switching to the SRTM asset
-    #   since it is already being used in model.py and provides global support
+    # TODO: This should be a function parameter
+    # Using a global dataset to support global applications
     elev = ee.Image('USGS/SRTMGL1_003')
-    # elev = ee.Image('USGS/3DEP/10m')
-    # elev = ee.Image('NASA/NASADEM_HGT/001')
-    # # elev = ee.Image('USGS/NED')
+    # elev = ee.Image('NASA/NASADEM_HGT/001').select(['elevation'])
+    # # elev = ee.Image('USGS/3DEP/10m')
 
     lat = ee.Image.pixelLonLat().select(['latitude']).multiply(math.pi / 180)
     lon = ee.Image.pixelLonLat().select(['longitude']).multiply(math.pi / 180)
@@ -68,7 +66,10 @@ def surface_reflectance(refl_toa_image, meteo_coll):
     def cos_theta_mountain_func(acq_doy, acq_time, lat, lon, slope, aspect):
         delta = acq_doy.multiply(2 * math.pi / 365).subtract(1.39435).sin().multiply(0.40928)
         b = acq_doy.subtract(81).multiply(2 * math.pi / 364)
-        sc = b.multiply(2).sin().multiply(0.1645).subtract(b.cos().multiply(0.1255)).subtract(b.sin().multiply(0.025))
+        sc = (
+            b.multiply(2).sin().multiply(0.1645).subtract(b.cos().multiply(0.1255))
+            .subtract(b.sin().multiply(0.025))
+        )
         solar_time = lon.multiply(12 / math.pi).add(acq_time).add(sc)
         # solar_time = lon.expression(
         #     't + (lon * 12 / pi) + sc',
@@ -83,15 +84,10 @@ def surface_reflectance(refl_toa_image, meteo_coll):
             '(sin(aspect) * slope_s * sin(omega) * delta_c)',
             {
                 'lat': lat, 'aspect': aspect, 'slope_c': slope.cos(), 'slope_s': slope.sin(),
-                'omega': omega,
-                # CGM - Do these need to be constant images?
-                'delta_c': ee.Image.constant(delta.cos()),
-                'delta_s': ee.Image.constant(delta.sin()),
+                'omega': omega, 'delta_c': delta.cos(), 'delta_s': delta.sin(),
             }
         )
-        cos_theta = cos_theta.divide(slope.cos()).max(ee.Image.constant(0.1))
-
-        return cos_theta
+        return cos_theta.divide(slope.cos()).max(ee.Image.constant(0.1))
 
     cos_theta = cos_theta_mountain_func(doy, hour, lat, lon, slope, aspect)
 
@@ -99,25 +95,32 @@ def surface_reflectance(refl_toa_image, meteo_coll):
     # TODO: Double check the coefficients since the original band numbers seemed to be for L5/L7
     #   but maybe the values are right and it is just the column headings
     # Calibrated Landsat Constants LS8
-    # Coeff        Band2      Band3      Band4      Band5     Band6      Band7
-    c1 = ee.Image([0.987,     2.148,     0.942,     0.248,    0.260,     0.315])
-    c2 = ee.Image([-0.000727, -0.000199, -0.000261, -0.00041, -0.001084, -0.000975])
-    c3 = ee.Image([0.000037,  0.000058,  0.000406,  0.000563, 0.000675,  0.004012])
-    c4 = ee.Image([0.0869,    0.0464,    0.0928,    0.2256,   0.0632,    0.0116])
-    c5 = ee.Image([0.0788,    -1.0962,   0.1125,    0.7991,   0.7549,    0.6906])
-    cb = ee.Image([0.640,     0.310,     0.286,     0.189,    0.274,     -0.186])
+    # Note, the Band 1 coefficients were not generated using the same approach
+    #   as the other coefficients, are developed from a small number of images,
+    #   and a more detailed analysis should be conducted if more/other models
+    #   start using Band 1
+    #     Band1      Band2      Band3      Band4      Band5     Band6      Band7
+    c1 = [ 0.847,     0.987,     2.148,     0.942,     0.248,     0.260,     0.315]
+    c2 = [-0.001343, -0.000727, -0.000199, -0.000261, -0.000410, -0.001084, -0.000975]
+    c3 = [ 0.000610,  0.000037,  0.000058,  0.000406,  0.000563,  0.000675,  0.004012]
+    c4 = [-0.1069,    0.0869,    0.0464,    0.0928,    0.2256,    0.0632,    0.0116]
+    c5 = [ 0.0609,    0.0788,   -1.0962,    0.1125,    0.7991,    0.7549,    0.6906]
+    cb = [ 0.720,     0.640,     0.310,     0.286,     0.189,     0.274,    -0.186]
 
-    tau_in = pair.multiply(c2).divide(cos_theta).subtract(w.multiply(c3).add(c4).divide(cos_theta))\
+    tau_in = (
+        pair.multiply(c2).divide(cos_theta).subtract(w.multiply(c3).add(c4).divide(cos_theta))
         .exp().multiply(c1).add(c5)
+    )
     tau_out = pair.multiply(c2).subtract(w.multiply(c3).add(c4)).exp().multiply(c1).add(c5)
 
     refl_sur_image = (
         refl_toa_image
-        .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
+        .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
         .expression(
             '(b() + cb * (tau_in - 1)) / (tau_in * tau_out)',
             {'cb': cb, 'tau_in': tau_in, 'tau_out': tau_out})
-        .rename(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
+        .max(0)
+        .rename(['SR_B1', 'SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
     )
 
     return refl_sur_image

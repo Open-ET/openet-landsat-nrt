@@ -5,7 +5,6 @@ import ee
 
 
 def randomforest_getparameter(
-        #rt_img,
         toa_img,
         meteo_coll,
         trainstart,
@@ -17,8 +16,6 @@ def randomforest_getparameter(
         endmonth=12,
 ):
     """"""
-
-    #toa_img = landsat_rt_preprocess(rt_img)
 
     date = ee.Date(toa_img.get('system:time_start'))
 

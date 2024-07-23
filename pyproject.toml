@@ -1,6 +1,6 @@
 [project]
 name = "openet-landsat-nrt"
-version = "0.0.7"
+version = "0.0.9"
 authors = [
     { name="Yun Yang", email="yun.yang@msstate.edu" },
 ]
